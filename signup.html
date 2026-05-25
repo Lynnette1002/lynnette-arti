@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lynn AI — Create Account</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111111;
+      --surface2: #1a1a1a;
+      --border: rgba(255,255,255,0.08);
+      --text: #f0f0f0;
+      --text-muted: rgba(240,240,240,0.4);
+      --accent: #a8b8ff;
+      --accent-dim: rgba(168,184,255,0.1);
+      --error: #ff7b7b;
+      --success: #7bffb8;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      font-family: var(--font);
+      color: var(--text);
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 70% 50% at 50% -10%, rgba(168,184,255,0.07) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 40% at 10% 90%, rgba(168,184,255,0.04) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .card {
+      position: relative;
+      z-index: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 44px 40px;
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.04) inset;
+    }
+
+    /* ── Brand ── */
+    .brand {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+
+    .brand-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 16px;
+      background: linear-gradient(145deg, rgba(168,184,255,0.18), rgba(168,184,255,0.04));
+      border: 1px solid rgba(168,184,255,0.18);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 18px;
+      font-size: 22px;
+      font-weight: 300;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+    }
+
+    .brand h1 {
+      font-size: 22px;
+      font-weight: 300;
+      letter-spacing: 0.22em;
+      color: var(--text);
+    }
+
+    .brand p {
+      margin-top: 9px;
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      letter-spacing: 0.02em;
+    }
+
+    /* ── Notice ── */
+    .notice {
+      font-size: 13px;
+      border-radius: 11px;
+      padding: 12px 15px;
+      margin-bottom: 18px;
+      display: none;
+      line-height: 1.55;
+      animation: fadeSlide 0.2s ease;
+    }
+
+    .notice.error {
+      color: var(--error);
+      background: rgba(255,123,123,0.08);
+      border: 1px solid rgba(255,123,123,0.15);
+    }
+
+    .notice.success {
+      color: var(--success);
+      background: rgba(123,255,184,0.08);
+      border: 1px solid rgba(123,255,184,0.18);
+    }
+
+    @keyframes fadeSlide {
+      from { opacity: 0; transform: translateY(-5px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Fields ── */
+    .fields {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .field label {
+      font-size: 12px;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      padding-left: 2px;
+    }
+
+    .field input {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 13px 16px;
+      font-size: 14px;
+      font-family: var(--font);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .field input:focus {
+      border-color: rgba(168,184,255,0.4);
+      box-shadow: 0 0 0 3px rgba(168,184,255,0.07);
+    }
+
+    .field input::placeholder { color: var(--text-muted); }
+    .field input.invalid { border-color: rgba(255,123,123,0.45); }
+
+    /* Strength bar */
+    .strength-bar {
+      height: 3px;
+      border-radius: 2px;
+      background: var(--surface2);
+      margin-top: 6px;
+      overflow: hidden;
+    }
+
+    .strength-fill {
+      height: 100%;
+      border-radius: 2px;
+      width: 0%;
+      transition: width 0.3s, background 0.3s;
+    }
+
+    .strength-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      padding-left: 2px;
+      min-height: 14px;
+      transition: color 0.3s;
+    }
+
+    /* Terms */
+    .terms {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 22px;
+      cursor: pointer;
+    }
+
+    .terms input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      margin-top: 1px;
+      accent-color: var(--accent);
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
+    .terms span {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .terms a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .terms a:hover { opacity: 0.7; }
+
+    /* ── Submit ── */
+    .btn-submit {
+      width: 100%;
+      padding: 14px;
+      background: var(--accent);
+      color: #0a0a18;
+      border: none;
+      border-radius: 12px;
+      font-size: 14px;
+      font-family: var(--font);
+      font-weight: 500;
+      cursor: pointer;
+      letter-spacing: 0.03em;
+      transition: opacity 0.2s, transform 0.12s;
+      margin-bottom: 22px;
+    }
+
+    .btn-submit:hover { opacity: 0.87; }
+    .btn-submit:active { transform: scale(0.98); }
+    .btn-submit:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+
+    /* Spinner */
+    .spinner {
+      display: inline-block;
+      width: 13px;
+      height: 13px;
+      border: 2px solid rgba(10,10,24,0.25);
+      border-top-color: #0a0a18;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 7px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Divider ── */
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── OAuth ── */
+    .oauth-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      font-size: 14px;
+      font-family: var(--font);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: background 0.2s, border-color 0.2s;
+      margin-bottom: 24px;
+    }
+
+    .oauth-btn:hover {
+      background: #1e1e1e;
+      border-color: rgba(255,255,255,0.14);
+    }
+
+    .g-icon { width: 18px; height: 18px; flex-shrink: 0; }
+
+    /* ── Footer ── */
+    .footer {
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .footer a:hover { opacity: 0.7; }
+
+    /* ── Success screen ── */
+    #success-screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 16px;
+    }
+
+    .check-circle {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: rgba(123,255,184,0.1);
+      border: 1px solid rgba(123,255,184,0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes popIn {
+      from { transform: scale(0.6); opacity: 0; }
+      to   { transform: scale(1);   opacity: 1; }
+    }
+
+    #success-screen h2 {
+      font-size: 20px;
+      font-weight: 300;
+      letter-spacing: 0.08em;
+    }
+
+    #success-screen p {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      max-width: 280px;
+    }
+
+    #success-screen .btn-submit {
+      margin-top: 8px;
+      margin-bottom: 0;
+    }
+
+    @media (max-width: 460px) {
+      .card { padding: 36px 24px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+
+  <!-- ── Sign-up form ── -->
+  <div id="form-view">
+
+    <div class="brand">
+      <div class="brand-icon">L</div>
+      <h1>CREATE ACCOUNT</h1>
+      <p>Join Lynn AI. Intelligent, calm, always here.</p>
+    </div>
+
+    <div class="notice" id="notice"></div>
+
+    <div class="fields">
+
+      <div class="field">
+        <label for="fullname">Full name</label>
+        <input
+          type="text"
+          id="fullname"
+          placeholder="Jane Smith"
+          autocomplete="name"
+        />
+      </div>
+
+      <div class="field">
+        <label for="email">Email</label>
+        <input
+          type="email"
+          id="email"
+          placeholder="you@example.com"
+          autocomplete="email"
+        />
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input
+          type="password"
+          id="password"
+          placeholder="At least 8 characters"
+          autocomplete="new-password"
+          oninput="updateStrength(this.value)"
+        />
+        <div class="strength-bar">
+          <div class="strength-fill" id="strength-fill"></div>
+        </div>
+        <div class="strength-label" id="strength-label"></div>
+      </div>
+
+      <div class="field">
+        <label for="confirm">Confirm password</label>
+        <input
+          type="password"
+          id="confirm"
+          placeholder="Repeat your password"
+          autocomplete="new-password"
+        />
+      </div>
+
+    </div>
+
+    <label class="terms">
+      <input type="checkbox" id="terms-check" />
+      <span>
+        I agree to the <a href="#" onclick="return false">Terms of Service</a>
+        and <a href="#" onclick="return false">Privacy Policy</a>
+      </span>
+    </label>
+
+    <button class="btn-submit" id="submit-btn" onclick="handleSignUp()">
+      Create account
+    </button>
+
+    <div class="divider">or</div>
+
+    <button class="oauth-btn" onclick="signUpWithGoogle()">
+      <svg class="g-icon" viewBox="0 0 24 24" fill="none">
+        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+      </svg>
+      Continue with Google
+    </button>
+
+    <p class="footer">
+      Already have an account? <a href="login.html">Sign in</a>
+    </p>
+
+  </div>
+
+  <!-- ── Success screen (shown after signup) ── -->
+  <div id="success-screen">
+    <div class="check-circle">✓</div>
+    <h2>Account created</h2>
+    <p id="success-msg">
+      We sent a confirmation link to your email. Click it to activate your account, then sign in.
+    </p>
+    <button class="btn-submit" onclick="window.location.href='login.html'">
+      Go to sign in
+    </button>
+  </div>
+
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────
+// CONFIGURATION — update these two lines
+// ─────────────────────────────────────────────────────────────
+const SUPABASE_URL  = "https://YOUR_PROJECT_REF.supabase.co"; // ← Supabase Project URL
+const SUPABASE_ANON = "YOUR_SUPABASE_ANON_KEY";               // ← anon/public key
+const CHAT_PAGE     = "index.html";                           // ← redirect after login
+// ─────────────────────────────────────────────────────────────
+
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+// If already logged in, skip signup
+sb.auth.onAuthStateChange((event, session) => {
+  if (session?.user) window.location.href = CHAT_PAGE;
+});
+
+// ── Password strength meter ──────────────────────────────────
+function updateStrength(password) {
+  const fill  = document.getElementById("strength-fill");
+  const label = document.getElementById("strength-label");
+
+  if (!password) {
+    fill.style.width = "0%";
+    label.textContent = "";
+    return;
+  }
+
+  let score = 0;
+  if (password.length >= 8)  score++;
+  if (password.length >= 12) score++;
+  if (/[A-Z]/.test(password)) score++;
+  if (/[0-9]/.test(password)) score++;
+  if (/[^A-Za-z0-9]/.test(password)) score++;
+
+  const levels = [
+    { pct: "20%", color: "#ff7b7b", text: "Too weak" },
+    { pct: "40%", color: "#ffb77b", text: "Weak" },
+    { pct: "60%", color: "#ffd97b", text: "Fair" },
+    { pct: "80%", color: "#a8d8a8", text: "Good" },
+    { pct: "100%", color: "#7bffb8", text: "Strong" },
+  ];
+
+  const level = levels[Math.min(score, 4)];
+  fill.style.width = level.pct;
+  fill.style.background = level.color;
+  label.textContent = level.text;
+  label.style.color = level.color;
+}
+
+// ── Sign up ──────────────────────────────────────────────────
+async function handleSignUp() {
+  const fullname = document.getElementById("fullname").value.trim();
+  const email    = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  const confirm  = document.getElementById("confirm").value;
+  const agreed   = document.getElementById("terms-check").checked;
+  const btn      = document.getElementById("submit-btn");
+
+  clearNotice();
+  clearInvalid();
+
+  // ── Validation ──
+  if (!fullname) {
+    return showError("Please enter your full name.", "fullname");
+  }
+  if (!email || !isValidEmail(email)) {
+    return showError("Please enter a valid email address.", "email");
+  }
+  if (!password || password.length < 8) {
+    return showError("Password must be at least 8 characters.", "password");
+  }
+  if (password !== confirm) {
+    return showError("Passwords don't match.", "confirm");
+  }
+  if (!agreed) {
+    return showNotice("Please agree to the Terms of Service to continue.", "error");
+  }
+
+  setLoading(btn, true);
+
+  try {
+    const { data, error } = await sb.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: fullname },  // stored in user metadata
+      },
+    });
+
+    if (error) throw error;
+
+    if (data.session) {
+      // Email confirmation is disabled in Supabase — user is logged in immediately
+      window.location.href = CHAT_PAGE;
+    } else {
+      // Email confirmation required — show success screen
+      showSuccessScreen(email);
+    }
+
+  } catch (err) {
+    showNotice(friendlyError(err.message), "error");
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+// ── Google OAuth ─────────────────────────────────────────────
+async function signUpWithGoogle() {
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: window.location.origin + "/" + CHAT_PAGE,
+    },
+  });
+  if (error) showNotice(friendlyError(error.message), "error");
+}
+
+// ── Success screen ───────────────────────────────────────────
+function showSuccessScreen(email) {
+  document.getElementById("form-view").style.display = "none";
+  const screen = document.getElementById("success-screen");
+  screen.style.display = "flex";
+  document.getElementById("success-msg").textContent =
+    `We sent a confirmation link to ${email}. Click it to activate your account, then sign in.`;
+}
+
+// ── UI helpers ───────────────────────────────────────────────
+function setLoading(btn, loading) {
+  btn.disabled = loading;
+  btn.innerHTML = loading
+    ? `<span class="spinner"></span>Creating account…`
+    : "Create account";
+}
+
+function showError(msg, fieldId) {
+  showNotice(msg, "error");
+  if (fieldId) {
+    document.getElementById(fieldId)?.classList.add("invalid");
+    document.getElementById(fieldId)?.focus();
+  }
+}
+
+function showNotice(msg, type) {
+  const el = document.getElementById("notice");
+  el.textContent = msg;
+  el.className = `notice ${type}`;
+  el.style.display = "block";
+}
+
+function clearNotice() {
+  const el = document.getElementById("notice");
+  el.style.display = "none";
+  el.textContent = "";
+}
+
+function clearInvalid() {
+  document.querySelectorAll(".invalid").forEach(el => el.classList.remove("invalid"));
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function friendlyError(msg = "") {
+  if (msg.includes("User already registered"))
+    return "An account with this email already exists. Try signing in instead.";
+  if (msg.includes("Password should be"))
+    return "Password must be at least 8 characters.";
+  if (msg.includes("rate limit"))
+    return "Too many attempts. Please wait a moment and try again.";
+  if (msg.includes("invalid email") || msg.includes("Invalid email"))
+    return "That email address doesn't look right.";
+  return msg || "Something went wrong. Please try again.";
+}
+
+// Submit on Enter in confirm field
+document.getElementById("confirm").addEventListener("keydown", e => {
+  if (e.key === "Enter") handleSignUp();
+});
+</script>
+</body>
+</html>
