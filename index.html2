@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lynn AI</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ── Sidebar overlay (mobile) ── -->
+  <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-brand">
+        <div class="sidebar-logo">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
+              d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
+          </svg>
+        </div>
+        <span class="sidebar-title">LYNN</span>
+      </div>
+      <button class="btn-icon" id="new-conv-btn" title="New conversation">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="conv-list" id="conv-list">
+      <!-- Conversations rendered by JS -->
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="user-avatar" id="user-avatar">L</div>
+      <div class="user-info">
+        <div class="user-name"  id="user-name">Loading…</div>
+        <div class="user-email" id="user-email"></div>
+      </div>
+      <button class="btn-icon" id="signout-btn" title="Sign out">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+        </svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── Main chat area ── -->
+  <main class="chat-main">
+
+    <!-- Header -->
+    <header class="chat-header">
+      <button class="mobile-menu-btn" id="mobile-menu-btn">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+      <span class="chat-title" id="chat-title">New conversation</span>
+      <label class="search-toggle" id="search-toggle" title="Search the web for real-time answers">
+        <input type="checkbox" id="use-search" />
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="13" height="13">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+        Web search
+      </label>
+    </header>
+
+    <!-- Messages -->
+    <div class="messages" id="messages">
+      <!-- Messages rendered by JS; empty state shown by clearMessages() -->
+    </div>
+
+    <!-- Input -->
+    <div class="input-area">
+      <div class="input-wrap">
+        <textarea
+          id="msg-input"
+          class="msg-input"
+          placeholder="Message Lynn…"
+          rows="1"
+        ></textarea>
+        <button class="send-btn" id="send-btn" title="Send">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="18" height="18">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
+          </svg>
+        </button>
+      </div>
+      <p class="input-hint">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</p>
+    </div>
+
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="script.js"></script>
+</body>
+</html>
