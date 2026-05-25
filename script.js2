@@ -1,0 +1,884 @@
+/* ================================================================
+   LYNN AI — script.js
+   Complete frontend logic: auth, streaming chat, conversations, UI
+   ================================================================ */
+
+// ────────────────────────────────────────────────────────────────
+// ★  CONFIGURATION
+//    Replace the values below with your own project details.
+// ────────────────────────────────────────────────────────────────
+const CONFIG = {
+  // ↓ Your Lynn AI backend URL — change this to your deployed URL
+  // Example: "https://your-repl.replit.app/api"
+  // If the frontend is served from the same domain, leave as "/api"
+  apiBase: "PASTE_BACKEND_URL_HERE",          // ← REPLACE THIS
+
+  // ↓ Your Supabase project URL (Settings → API → Project URL)
+  supabaseUrl: "https://YOUR_PROJECT.supabase.co", // ← REPLACE THIS
+
+  // ↓ Your Supabase anon/public key (Settings → API → anon public)
+  supabaseAnon: "YOUR_SUPABASE_ANON_KEY",          // ← REPLACE THIS
+
+  // Pages
+  loginPage:  "login.html",
+  signupPage: "signup.html",
+  chatPage:   "index.html",
+};
+// ────────────────────────────────────────────────────────────────
+
+const { createClient } = supabase;
+const sb = createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnon);
+
+/* ================================================================
+   GLOBAL STATE
+   ================================================================ */
+const State = {
+  user:          null,
+  currentConvId: null,
+  isGenerating:  false,
+};
+
+/* ================================================================
+   SUPABASE AUTH
+   ================================================================ */
+
+async function getToken() {
+  const { data } = await sb.auth.getSession();
+  return data?.session?.access_token ?? null;
+}
+
+async function signIn(email, password) {
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data;
+}
+
+async function signUp(email, password, fullName) {
+  const { data, error } = await sb.auth.signUp({
+    email, password,
+    options: { data: { full_name: fullName } },
+  });
+  if (error) throw error;
+  return data;
+}
+
+async function signInWithGoogle() {
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: window.location.origin + "/" + CONFIG.chatPage },
+  });
+  if (error) throw error;
+}
+
+async function sendPasswordReset(email) {
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + "/" + CONFIG.chatPage,
+  });
+  if (error) throw error;
+}
+
+async function signOut() {
+  await sb.auth.signOut();
+  window.location.href = CONFIG.loginPage;
+}
+
+/* ================================================================
+   API CLIENT
+   ================================================================ */
+
+async function apiFetch(path, options = {}) {
+  const token = await getToken();
+  if (!token) { window.location.href = CONFIG.loginPage; throw new Error("Not authenticated"); }
+
+  const res = await fetch(CONFIG.apiBase + path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(options.headers ?? {}),
+    },
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.message || `Request failed (${res.status})`);
+  return json;
+}
+
+/* ================================================================
+   STREAMING CHAT — fetch + ReadableStream + SSE parsing
+   ================================================================ */
+
+/**
+ * Send a message and stream Lynn's response into a DOM bubble.
+ * Calls onChunk(text) for each streamed token.
+ * Calls onDone({ conversationId, sources }) when complete.
+ * Calls onError(message) on failure.
+ */
+async function streamChat({ message, conversationId, useSearch, onChunk, onDone, onError }) {
+  const token = await getToken();
+  if (!token) { window.location.href = CONFIG.loginPage; return; }
+
+  let response;
+  try {
+    response = await fetch(CONFIG.apiBase + "/chat/stream", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ message, conversationId, useSearch }),
+    });
+  } catch (e) {
+    onError("Connection error — check your internet and try again.");
+    return;
+  }
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    onError(err.message || "Request failed. Please try again.");
+    return;
+  }
+
+  const reader  = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer    = "";
+  let resultConvId = conversationId;
+  let sources = [];
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE lines end with \n — process complete lines
+      const lines = buffer.split("\n");
+      buffer = lines.pop(); // keep any incomplete final line
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const raw = line.slice(6).trim();
+        if (raw === "[DONE]") break;
+
+        try {
+          const evt = JSON.parse(raw);
+
+          if (evt.type === "meta") {
+            resultConvId = evt.conversationId;
+          } else if (evt.type === "chunk" && evt.content) {
+            onChunk(evt.content);
+          } else if (evt.type === "done") {
+            sources = evt.sources ?? [];
+          } else if (evt.type === "error") {
+            onError(evt.message || "An error occurred during streaming.");
+            return;
+          }
+        } catch { /* ignore malformed lines */ }
+      }
+    }
+  } catch (e) {
+    onError("Stream was interrupted. Please try again.");
+    return;
+  }
+
+  onDone({ conversationId: resultConvId, sources });
+}
+
+/* ================================================================
+   CONVERSATION API
+   ================================================================ */
+
+async function fetchConversations() {
+  const { conversations } = await apiFetch("/conversations");
+  return conversations;
+}
+
+async function loadConversation(id) {
+  return apiFetch(`/conversations/${id}`);
+}
+
+async function deleteConversation(id) {
+  await apiFetch(`/conversations/${id}`, { method: "DELETE" });
+}
+
+/* ================================================================
+   VALIDATION HELPERS
+   ================================================================ */
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function friendlyError(msg = "") {
+  if (msg.includes("Invalid login credentials"))
+    return "Incorrect email or password.";
+  if (msg.includes("Email not confirmed"))
+    return "Please confirm your email first — check your inbox.";
+  if (msg.includes("User already registered"))
+    return "An account with this email already exists. Try signing in.";
+  if (msg.includes("Password should be") || msg.includes("at least"))
+    return "Password must be at least 8 characters.";
+  if (msg.includes("rate limit") || msg.includes("too many"))
+    return "Too many attempts. Please wait a moment and try again.";
+  if (msg.includes("fetch") || msg.includes("Load failed") || msg.includes("NetworkError"))
+    return "Connection error. Check that your Supabase URL and key are correct.";
+  return msg || "Something went wrong. Please try again.";
+}
+
+/* ================================================================
+   UI HELPERS
+   ================================================================ */
+
+function $(id)   { return document.getElementById(id); }
+function $$(sel) { return document.querySelectorAll(sel); }
+
+function showNotice(msg, type = "error", id = "notice") {
+  const el = $(id);
+  if (!el) return;
+  el.textContent  = msg;
+  el.className    = `notice ${type}`;
+  el.style.display = "block";
+}
+
+function clearNotice(id = "notice") {
+  const el = $(id);
+  if (!el) return;
+  el.style.display = "none";
+  el.textContent   = "";
+}
+
+function clearInvalid() {
+  $$(".invalid").forEach(el => el.classList.remove("invalid"));
+}
+
+function markInvalid(id) {
+  $(id)?.classList.add("invalid");
+}
+
+function setLoading(btn, loading, loadingText = "Loading…", defaultText = "") {
+  btn.disabled  = loading;
+  btn.innerHTML = loading
+    ? `<span class="spinner"></span>${loadingText}`
+    : (defaultText || btn.dataset.label || "Submit");
+  if (!btn.dataset.label && defaultText) btn.dataset.label = defaultText;
+}
+
+function escapeHtml(s = "") {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function truncate(s, n = 55) {
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+function autoResize(el, max = 160) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, max) + "px";
+}
+
+/* ================================================================
+   PASSWORD STRENGTH METER
+   ================================================================ */
+
+function updateStrength(pw) {
+  const fill  = $("strength-fill");
+  const label = $("strength-label");
+  if (!fill || !label) return;
+
+  if (!pw) { fill.style.width = "0%"; label.textContent = ""; return; }
+
+  let score = 0;
+  if (pw.length >= 8)          score++;
+  if (pw.length >= 12)         score++;
+  if (/[A-Z]/.test(pw))        score++;
+  if (/[0-9]/.test(pw))        score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+
+  const levels = [
+    { pct: "20%",  color: "#ef4444", text: "Too weak" },
+    { pct: "40%",  color: "#f97316", text: "Weak" },
+    { pct: "60%",  color: "#eab308", text: "Fair" },
+    { pct: "80%",  color: "#22c55e", text: "Good" },
+    { pct: "100%", color: "#10b981", text: "Strong" },
+  ];
+
+  const lv = levels[Math.min(score, 4)];
+  fill.style.width      = lv.pct;
+  fill.style.background = lv.color;
+  label.textContent     = lv.text;
+  label.style.color     = lv.color;
+}
+
+/* ================================================================
+   CHAT UI — MESSAGE RENDERING
+   ================================================================ */
+
+function removeEmptyState() {
+  $("empty-state")?.remove();
+}
+
+/**
+ * Append a complete message bubble.
+ */
+function appendMessage(role, content, sources = []) {
+  removeEmptyState();
+  const msgs = $("messages");
+  if (!msgs) return null;
+
+  const row    = document.createElement("div");
+  row.className = `msg-row ${role}`;
+
+  const bubble = document.createElement("div");
+  bubble.className  = "msg-bubble";
+  bubble.textContent = content;
+
+  if (role === "assistant" && sources.length) {
+    const src = document.createElement("div");
+    src.className = "msg-sources";
+    sources.slice(0, 5).forEach(s => {
+      const a    = document.createElement("a");
+      a.className = "source-chip";
+      a.href      = s.url;
+      a.target    = "_blank";
+      a.rel       = "noopener noreferrer";
+      a.textContent = s.title || s.url;
+      a.title     = s.url;
+      src.appendChild(a);
+    });
+    bubble.appendChild(src);
+  }
+
+  row.appendChild(bubble);
+  msgs.appendChild(row);
+  msgs.scrollTop = msgs.scrollHeight;
+  return bubble;
+}
+
+/**
+ * Create an empty streaming bubble with a blinking cursor.
+ * Returns { update, finalize, remove } helpers.
+ */
+function createStreamingBubble() {
+  removeEmptyState();
+  const msgs = $("messages");
+  if (!msgs) return null;
+
+  const row    = document.createElement("div");
+  row.className = "msg-row assistant";
+
+  const bubble = document.createElement("div");
+  bubble.className = "msg-bubble";
+
+  const cursor = document.createElement("span");
+  cursor.className = "cursor";
+
+  bubble.appendChild(cursor);
+  row.appendChild(bubble);
+  msgs.appendChild(row);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  let content = "";
+
+  return {
+    // Called for each streamed token
+    update(chunk) {
+      content += chunk;
+      bubble.textContent = content;
+      bubble.appendChild(cursor);
+      msgs.scrollTop = msgs.scrollHeight;
+    },
+    // Called when streaming is complete
+    finalize(sources = []) {
+      cursor.remove();
+      bubble.textContent = content;
+
+      if (sources.length) {
+        const src = document.createElement("div");
+        src.className = "msg-sources";
+        sources.slice(0, 5).forEach(s => {
+          const a    = document.createElement("a");
+          a.className = "source-chip";
+          a.href      = s.url;
+          a.target    = "_blank";
+          a.rel       = "noopener noreferrer";
+          a.textContent = s.title || s.url;
+          src.appendChild(a);
+        });
+        bubble.appendChild(src);
+      }
+
+      msgs.scrollTop = msgs.scrollHeight;
+    },
+    // Remove the bubble on error
+    remove() { row.remove(); },
+  };
+}
+
+function showTyping() {
+  removeEmptyState();
+  const msgs = $("messages");
+  if (!msgs) return;
+  const row    = document.createElement("div");
+  row.id        = "typing-indicator";
+  row.className = "typing-row";
+  row.innerHTML = `<div class="typing-bubble">
+    <div class="typing-dot"></div>
+    <div class="typing-dot"></div>
+    <div class="typing-dot"></div>
+  </div>`;
+  msgs.appendChild(row);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function hideTyping() { $("typing-indicator")?.remove(); }
+
+function clearMessages() {
+  const msgs = $("messages");
+  if (!msgs) return;
+  msgs.innerHTML = `
+    <div id="empty-state" class="empty-state fade-in">
+      <div class="empty-glow">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
+        </svg>
+      </div>
+      <h2>Lynn</h2>
+      <p>Your intelligent companion. Ask me anything.</p>
+      <div class="empty-suggestions">
+        <div class="suggestion-chip" onclick="useSuggestion(this)">What can you help me with?</div>
+        <div class="suggestion-chip" onclick="useSuggestion(this)">Explain quantum computing simply</div>
+        <div class="suggestion-chip" onclick="useSuggestion(this)">Write me a poem about the future</div>
+        <div class="suggestion-chip" onclick="useSuggestion(this)">What's the latest in AI?</div>
+      </div>
+    </div>`;
+}
+
+function renderMessages(messages) {
+  const msgs = $("messages");
+  if (!msgs) return;
+  msgs.innerHTML = "";
+  if (!messages.length) { clearMessages(); return; }
+  messages.forEach(m => appendMessage(m.role, m.content, m.sources ?? []));
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+/* ================================================================
+   SIDEBAR UI
+   ================================================================ */
+
+function renderConversationList(conversations) {
+  const list = $("conv-list");
+  if (!list) return;
+  list.innerHTML = "";
+
+  if (!conversations.length) {
+    list.innerHTML = `<div class="conv-empty">No conversations yet.<br>Start chatting with Lynn.</div>`;
+    return;
+  }
+
+  const groups = groupConversations(conversations);
+
+  for (const [label, items] of Object.entries(groups)) {
+    if (!items.length) continue;
+    const section = document.createElement("div");
+    section.innerHTML = `<div class="conv-section-label">${label}</div>`;
+
+    items.forEach(conv => {
+      const item = document.createElement("div");
+      item.className = "conv-item" + (conv.id === State.currentConvId ? " active" : "");
+      item.dataset.id = conv.id;
+      item.innerHTML = `
+        <div class="conv-item-icon">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+          </svg>
+        </div>
+        <span class="conv-item-title">${escapeHtml(conv.title)}</span>
+        <button class="conv-item-delete" title="Delete">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>`;
+
+      item.addEventListener("click", e => {
+        if (!e.target.closest(".conv-item-delete")) openConversation(conv.id, conv.title);
+      });
+
+      item.querySelector(".conv-item-delete").addEventListener("click", e => {
+        e.stopPropagation();
+        handleDeleteConversation(conv.id);
+      });
+
+      section.appendChild(item);
+    });
+
+    list.appendChild(section);
+  }
+}
+
+function groupConversations(conversations) {
+  const now       = new Date();
+  const today     = now.toDateString();
+  const yesterday = new Date(now - 86400000).toDateString();
+
+  const groups = { "Today": [], "Yesterday": [], "Earlier": [] };
+  conversations.forEach(c => {
+    const d = new Date(c.updatedAt || c.createdAt).toDateString();
+    if (d === today)          groups["Today"].push(c);
+    else if (d === yesterday) groups["Yesterday"].push(c);
+    else                      groups["Earlier"].push(c);
+  });
+  return groups;
+}
+
+function setActiveConv(id) {
+  $$(".conv-item").forEach(el => el.classList.toggle("active", el.dataset.id === id));
+}
+
+/* ================================================================
+   CHAT PAGE ACTIONS
+   ================================================================ */
+
+async function refreshConversationList() {
+  try {
+    const convs = await fetchConversations();
+    renderConversationList(convs);
+  } catch (e) {
+    console.error("[Lynn] Failed to load conversations:", e);
+  }
+}
+
+async function openConversation(id, title) {
+  State.currentConvId = id;
+  const titleEl = $("chat-title");
+  if (titleEl) titleEl.textContent = title;
+  setActiveConv(id);
+  closeMobileSidebar();
+
+  try {
+    const { messages } = await loadConversation(id);
+    renderMessages(messages);
+  } catch (e) {
+    console.error("[Lynn] Failed to load conversation:", e);
+  }
+}
+
+function startNewConversation() {
+  State.currentConvId = null;
+  const titleEl = $("chat-title");
+  if (titleEl) titleEl.textContent = "New conversation";
+  setActiveConv(null);
+  clearMessages();
+  closeMobileSidebar();
+  $("msg-input")?.focus();
+}
+
+async function handleDeleteConversation(id) {
+  try {
+    await deleteConversation(id);
+    if (State.currentConvId === id) startNewConversation();
+    await refreshConversationList();
+  } catch (e) {
+    console.error("[Lynn] Failed to delete:", e);
+  }
+}
+
+window.useSuggestion = function(el) {
+  const input = $("msg-input");
+  if (!input) return;
+  input.value = el.textContent;
+  autoResize(input);
+  input.focus();
+};
+
+/* ================================================================
+   SEND MESSAGE — streaming
+   ================================================================ */
+
+async function handleSend() {
+  if (State.isGenerating) return;
+
+  const input     = $("msg-input");
+  const sendBtn   = $("send-btn");
+  const useSearch = $("use-search")?.checked ?? false;
+  const message   = input?.value.trim();
+  if (!message) return;
+
+  State.isGenerating = true;
+  input.value = "";
+  autoResize(input);
+  if (sendBtn) sendBtn.disabled = true;
+
+  appendMessage("user", message);
+  showTyping();
+
+  let streamBubble = null;
+  let firstChunk   = true;
+
+  await streamChat({
+    message,
+    conversationId: State.currentConvId || undefined,
+    useSearch,
+
+    onChunk(chunk) {
+      if (firstChunk) {
+        hideTyping();
+        streamBubble = createStreamingBubble();
+        firstChunk   = false;
+      }
+      streamBubble?.update(chunk);
+    },
+
+    onDone({ conversationId, sources }) {
+      streamBubble?.finalize(sources);
+
+      if (!State.currentConvId) {
+        State.currentConvId = conversationId;
+        const titleEl = $("chat-title");
+        if (titleEl) titleEl.textContent = truncate(message);
+        refreshConversationList().then(() => setActiveConv(conversationId));
+      }
+
+      State.isGenerating = false;
+      if (sendBtn) sendBtn.disabled = false;
+      input?.focus();
+    },
+
+    onError(msg) {
+      hideTyping();
+      streamBubble?.remove();
+      appendMessage("assistant", msg);
+      State.isGenerating = false;
+      if (sendBtn) sendBtn.disabled = false;
+      input?.focus();
+    },
+  });
+}
+
+/* ================================================================
+   MOBILE SIDEBAR
+   ================================================================ */
+
+function openMobileSidebar() {
+  $("sidebar")?.classList.add("open");
+  $("sidebar-overlay")?.classList.add("visible");
+}
+
+function closeMobileSidebar() {
+  $("sidebar")?.classList.remove("open");
+  $("sidebar-overlay")?.classList.remove("visible");
+}
+
+/* ================================================================
+   AUTH GUARD
+   ================================================================ */
+
+async function requireAuth() {
+  const { data } = await sb.auth.getSession();
+  if (!data?.session?.user) { window.location.href = CONFIG.loginPage; return null; }
+  State.user = data.session.user;
+  return State.user;
+}
+
+function redirectIfLoggedIn() {
+  sb.auth.onAuthStateChange((_, session) => {
+    if (session?.user) window.location.href = CONFIG.chatPage;
+  });
+}
+
+/* ================================================================
+   PAGE: CHAT  (index.html)
+   ================================================================ */
+
+async function initChatPage() {
+  const user = await requireAuth();
+  if (!user) return;
+
+  const initials = (user.user_metadata?.full_name || user.email || "L")
+    .split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  const avatarEl = $("user-avatar");
+  const nameEl   = $("user-name");
+  const emailEl  = $("user-email");
+  if (avatarEl)  avatarEl.textContent  = initials;
+  if (nameEl)    nameEl.textContent    = user.user_metadata?.full_name || "You";
+  if (emailEl)   emailEl.textContent   = user.email;
+
+  clearMessages();
+  await refreshConversationList();
+
+  $("new-conv-btn")?.addEventListener("click", startNewConversation);
+  $("signout-btn")?.addEventListener("click", signOut);
+  $("send-btn")?.addEventListener("click", handleSend);
+  $("mobile-menu-btn")?.addEventListener("click", openMobileSidebar);
+  $("sidebar-overlay")?.addEventListener("click", closeMobileSidebar);
+
+  $("use-search")?.addEventListener("change", function() {
+    $("search-toggle")?.classList.toggle("active", this.checked);
+  });
+
+  const input = $("msg-input");
+  if (input) {
+    input.addEventListener("input", () => autoResize(input));
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    });
+    input.focus();
+  }
+}
+
+/* ================================================================
+   PAGE: LOGIN  (login.html)
+   ================================================================ */
+
+async function initLoginPage() {
+  redirectIfLoggedIn();
+
+  let mode = "login";
+
+  window.switchAuthTab = function(newMode) {
+    mode = newMode;
+    const isLogin = mode === "login";
+    $("tab-login")?.classList.toggle("active", isLogin);
+    $("tab-signup")?.classList.toggle("active", !isLogin);
+    $("forgot-wrap") && ($("forgot-wrap").style.display = isLogin ? "block" : "none");
+    const btn = $("submit-btn");
+    if (btn) { btn.textContent = isLogin ? "Sign in" : "Create account"; btn.dataset.label = btn.textContent; }
+    const footer = $("footer-text");
+    if (footer) footer.innerHTML = isLogin
+      ? `Don't have an account? <a href="${CONFIG.signupPage}">Create one</a>`
+      : `Already have an account? <a href="#" onclick="switchAuthTab('login')">Sign in</a>`;
+    clearNotice();
+    clearInvalid();
+  };
+
+  window.handleAuthSubmit = async function() {
+    const email    = $("email")?.value.trim();
+    const password = $("password")?.value;
+    const btn      = $("submit-btn");
+    clearNotice(); clearInvalid();
+
+    if (!email || !isValidEmail(email)) { showNotice("Please enter a valid email address."); markInvalid("email"); return; }
+    if (!password || password.length < 6) { showNotice("Password must be at least 6 characters."); markInvalid("password"); return; }
+
+    const label = mode === "login" ? "Signing in…" : "Creating account…";
+    const done  = mode === "login" ? "Sign in" : "Create account";
+    setLoading(btn, true, label, done);
+
+    try {
+      if (mode === "login") {
+        await signIn(email, password);
+      } else {
+        const { session } = await signUp(email, password, "");
+        if (session) {
+          window.location.href = CONFIG.chatPage;
+        } else {
+          showNotice("Account created! Check your inbox to confirm, then sign in.", "success");
+          window.switchAuthTab("login");
+        }
+      }
+    } catch (e) {
+      showNotice(friendlyError(e.message));
+    } finally {
+      setLoading(btn, false, "", done);
+    }
+  };
+
+  window.handleGoogleSignIn = () => signInWithGoogle().catch(e => showNotice(friendlyError(e.message)));
+
+  window.showResetView = () => {
+    $("main-view") && ($("main-view").style.display = "none");
+    $("reset-view") && ($("reset-view").style.display = "flex");
+    clearNotice("reset-notice");
+    const resetEmail = $("reset-email");
+    if (resetEmail) resetEmail.value = $("email")?.value || "";
+  };
+
+  window.showMainView = () => {
+    $("main-view") && ($("main-view").style.display = "flex");
+    $("reset-view") && ($("reset-view").style.display = "none");
+  };
+
+  window.handleReset = async function() {
+    const email = $("reset-email")?.value.trim();
+    const btn   = $("reset-btn");
+    clearNotice("reset-notice");
+    if (!email || !isValidEmail(email)) { showNotice("Please enter a valid email.", "error", "reset-notice"); return; }
+    setLoading(btn, true, "Sending…", "Send reset link");
+    try {
+      await sendPasswordReset(email);
+      showNotice("Reset link sent! Check your inbox.", "success", "reset-notice");
+    } catch (e) {
+      showNotice(friendlyError(e.message), "error", "reset-notice");
+    } finally {
+      setLoading(btn, false, "", "Send reset link");
+    }
+  };
+
+  $("password")?.addEventListener("keydown", e => { if (e.key === "Enter") window.handleAuthSubmit(); });
+}
+
+/* ================================================================
+   PAGE: SIGNUP  (signup.html)
+   ================================================================ */
+
+async function initSignupPage() {
+  redirectIfLoggedIn();
+
+  $("password")?.addEventListener("input", e => updateStrength(e.target.value));
+
+  window.handleGoogleSignIn = () => signInWithGoogle().catch(e => showNotice(friendlyError(e.message)));
+
+  window.handleSignUp = async function() {
+    const fullname = $("fullname")?.value.trim();
+    const email    = $("email")?.value.trim();
+    const password = $("password")?.value;
+    const confirm  = $("confirm")?.value;
+    const agreed   = $("terms-check")?.checked;
+    const btn      = $("submit-btn");
+    clearNotice(); clearInvalid();
+
+    if (!fullname)                        { showNotice("Please enter your full name."); markInvalid("fullname"); return; }
+    if (!email || !isValidEmail(email))   { showNotice("Please enter a valid email."); markInvalid("email"); return; }
+    if (!password || password.length < 8) { showNotice("Password must be at least 8 characters."); markInvalid("password"); return; }
+    if (password !== confirm)             { showNotice("Passwords don't match."); markInvalid("confirm"); return; }
+    if (!agreed)                          { showNotice("Please agree to the Terms to continue."); return; }
+
+    setLoading(btn, true, "Creating account…", "Create account");
+    try {
+      const { session } = await signUp(email, password, fullname);
+      if (session) {
+        window.location.href = CONFIG.chatPage;
+      } else {
+        $("form-view") && ($("form-view").style.display = "none");
+        const sc = $("success-screen");
+        if (sc) {
+          sc.style.display = "flex";
+          const msg = sc.querySelector("p");
+          if (msg) msg.textContent = `We sent a confirmation link to ${email}. Click it to activate your account, then sign in.`;
+        }
+      }
+    } catch (e) {
+      showNotice(friendlyError(e.message));
+    } finally {
+      setLoading(btn, false, "", "Create account");
+    }
+  };
+
+  $("confirm")?.addEventListener("keydown", e => { if (e.key === "Enter") window.handleSignUp(); });
+}
+
+/* ================================================================
+   AUTO-INIT
+   ================================================================ */
+
+document.addEventListener("DOMContentLoaded", () => {
+  const path = window.location.pathname;
+  if      (path.endsWith("signup.html")) initSignupPage();
+  else if (path.endsWith("login.html"))  initLoginPage();
+  else                                   initChatPage();
+});
