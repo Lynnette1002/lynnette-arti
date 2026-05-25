@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lynn AI — Sign in</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111111;
+      --surface2: #1a1a1a;
+      --border: rgba(255,255,255,0.08);
+      --text: #f0f0f0;
+      --text-muted: rgba(240,240,240,0.4);
+      --accent: #a8b8ff;
+      --accent-dim: rgba(168,184,255,0.1);
+      --error: #ff7b7b;
+      --success: #7bffb8;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      font-family: var(--font);
+      color: var(--text);
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    /* ── Background glow ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 50% 0%, rgba(168,184,255,0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 30% at 80% 80%, rgba(168,184,255,0.04) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .card {
+      position: relative;
+      z-index: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 44px 40px;
+      width: 100%;
+      max-width: 400px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.05) inset;
+    }
+
+    /* ── Brand ── */
+    .brand {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+
+    .brand-logo {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(168,184,255,0.2), rgba(168,184,255,0.05));
+      border: 1px solid rgba(168,184,255,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 18px;
+      font-size: 20px;
+      color: var(--accent);
+      letter-spacing: -0.02em;
+    }
+
+    .brand h1 {
+      font-size: 24px;
+      font-weight: 300;
+      letter-spacing: 0.2em;
+      color: var(--text);
+    }
+
+    .brand p {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+      letter-spacing: 0.03em;
+      line-height: 1.5;
+    }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      background: var(--surface2);
+      border-radius: 12px;
+      padding: 3px;
+      margin-bottom: 24px;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 9px 12px;
+      text-align: center;
+      font-size: 13px;
+      font-family: var(--font);
+      cursor: pointer;
+      border: none;
+      background: none;
+      border-radius: 9px;
+      color: var(--text-muted);
+      transition: all 0.2s;
+      letter-spacing: 0.02em;
+    }
+
+    .tab.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05);
+    }
+
+    /* ── Form fields ── */
+    .fields {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .field label {
+      font-size: 12px;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+      padding-left: 2px;
+    }
+
+    .field input {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      padding: 13px 15px;
+      font-size: 14px;
+      font-family: var(--font);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .field input:focus {
+      border-color: rgba(168,184,255,0.4);
+      box-shadow: 0 0 0 3px rgba(168,184,255,0.07);
+    }
+
+    .field input::placeholder { color: var(--text-muted); }
+
+    .field input.invalid {
+      border-color: rgba(255,123,123,0.5);
+    }
+
+    /* ── Forgot password ── */
+    .forgot {
+      text-align: right;
+      margin-top: -6px;
+      margin-bottom: 4px;
+    }
+
+    .forgot a {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-decoration: none;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+
+    .forgot a:hover { color: var(--accent); }
+
+    /* ── Notice / error / success ── */
+    .notice {
+      font-size: 13px;
+      border-radius: 10px;
+      padding: 11px 14px;
+      margin-bottom: 16px;
+      display: none;
+      line-height: 1.5;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .notice.error {
+      color: var(--error);
+      background: rgba(255,123,123,0.08);
+      border: 1px solid rgba(255,123,123,0.15);
+    }
+
+    .notice.success {
+      color: var(--success);
+      background: rgba(123,255,184,0.08);
+      border: 1px solid rgba(123,255,184,0.15);
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Submit button ── */
+    .btn-submit {
+      width: 100%;
+      padding: 14px;
+      background: var(--accent);
+      color: #0a0a18;
+      border: none;
+      border-radius: 11px;
+      font-size: 14px;
+      font-family: var(--font);
+      font-weight: 500;
+      cursor: pointer;
+      letter-spacing: 0.03em;
+      transition: opacity 0.2s, transform 0.12s;
+      margin-bottom: 20px;
+    }
+
+    .btn-submit:hover { opacity: 0.88; }
+    .btn-submit:active { transform: scale(0.98); }
+
+    .btn-submit:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ── Divider ── */
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── OAuth buttons ── */
+    .oauth-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      font-size: 14px;
+      font-family: var(--font);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: background 0.2s, border-color 0.2s;
+      margin-bottom: 10px;
+      text-decoration: none;
+    }
+
+    .oauth-btn:hover {
+      background: #222;
+      border-color: rgba(255,255,255,0.14);
+    }
+
+    .oauth-icon {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    /* ── Footer ── */
+    .card-footer {
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .card-footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .card-footer a:hover { opacity: 0.7; }
+
+    /* ── Reset password view ── */
+    #reset-view { display: none; }
+    #main-view  { display: flex; flex-direction: column; }
+
+    .back-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-family: var(--font);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 20px;
+      padding: 0;
+      transition: color 0.2s;
+    }
+
+    .back-btn:hover { color: var(--text); }
+
+    /* ── Loading spinner ── */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(10,10,24,0.3);
+      border-top-color: #0a0a18;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 440px) {
+      .card { padding: 36px 24px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+
+  <!-- ── Main view (login / signup) ── -->
+  <div id="main-view">
+
+    <div class="brand">
+      <div class="brand-logo">L</div>
+      <h1>LYNN</h1>
+      <p>Your intelligent companion.<br>Sign in to continue.</p>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" id="tab-login" onclick="switchTab('login')">Sign in</button>
+      <button class="tab"        id="tab-signup" onclick="switchTab('signup')">Create account</button>
+    </div>
+
+    <div class="notice" id="notice"></div>
+
+    <div class="fields">
+      <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="you@example.com" autocomplete="email" />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" />
+      </div>
+    </div>
+
+    <div class="forgot" id="forgot-wrap">
+      <a onclick="showReset()">Forgot password?</a>
+    </div>
+
+    <button class="btn-submit" id="submit-btn" onclick="handleSubmit()">Sign in</button>
+
+    <div class="divider">or</div>
+
+    <!-- Google OAuth — remove if not enabled in Supabase -->
+    <button class="oauth-btn" onclick="signInWithGoogle()">
+      <svg class="oauth-icon" viewBox="0 0 24 24" fill="none">
+        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+      </svg>
+      Continue with Google
+    </button>
+
+    <p class="card-footer" id="footer-text">
+      Don't have an account? <a onclick="switchTab('signup')">Create one</a>
+    </p>
+
+  </div>
+
+  <!-- ── Reset password view ── -->
+  <div id="reset-view">
+
+    <button class="back-btn" onclick="showMain()">← Back to sign in</button>
+
+    <div class="brand" style="margin-bottom:24px">
+      <h1 style="font-size:18px;letter-spacing:0.1em">Reset password</h1>
+      <p style="margin-top:8px">Enter your email and we'll send you a reset link.</p>
+    </div>
+
+    <div class="notice" id="reset-notice"></div>
+
+    <div class="fields">
+      <div class="field">
+        <label for="reset-email">Email</label>
+        <input type="email" id="reset-email" placeholder="you@example.com" autocomplete="email" />
+      </div>
+    </div>
+
+    <button class="btn-submit" id="reset-btn" onclick="handleReset()">Send reset link</button>
+
+    <p class="card-footer">Check your inbox after submitting.</p>
+
+  </div>
+
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────
+// CONFIGURATION — update these two lines
+// ─────────────────────────────────────────────────────────────
+const SUPABASE_URL  = "https://YOUR_PROJECT_REF.supabase.co"; // ← Supabase Project URL
+const SUPABASE_ANON = "YOUR_SUPABASE_ANON_KEY";               // ← Supabase anon/public key
+const CHAT_PAGE     = "index.html";                            // ← page to redirect after login
+// ─────────────────────────────────────────────────────────────
+
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+let currentTab = "login";
+
+// ── If already logged in, go straight to chat ────────────────
+sb.auth.onAuthStateChange((event, session) => {
+  if (session?.user) {
+    window.location.href = CHAT_PAGE;
+  }
+});
+
+// ── Tab switching ─────────────────────────────────────────────
+function switchTab(tab) {
+  currentTab = tab;
+  const isLogin = tab === "login";
+
+  document.getElementById("tab-login").classList.toggle("active", isLogin);
+  document.getElementById("tab-signup").classList.toggle("active", !isLogin);
+  document.getElementById("forgot-wrap").style.display = isLogin ? "block" : "none";
+  document.getElementById("submit-btn").textContent = isLogin ? "Sign in" : "Create account";
+  document.getElementById("footer-text").innerHTML = isLogin
+    ? `Don't have an account? <a onclick="switchTab('signup')">Create one</a>`
+    : `Already have an account? <a onclick="switchTab('login')">Sign in</a>`;
+
+  // Update password autocomplete hint
+  document.getElementById("password").autocomplete =
+    isLogin ? "current-password" : "new-password";
+
+  clearNotice();
+}
+
+// ── Main form submit ──────────────────────────────────────────
+async function handleSubmit() {
+  const email    = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  const btn      = document.getElementById("submit-btn");
+
+  clearNotice();
+
+  // Basic validation
+  if (!email || !isValidEmail(email)) {
+    showNotice("Please enter a valid email address.", "error");
+    document.getElementById("email").classList.add("invalid");
+    return;
+  }
+  if (!password || password.length < 6) {
+    showNotice("Password must be at least 6 characters.", "error");
+    document.getElementById("password").classList.add("invalid");
+    return;
+  }
+
+  setLoading(btn, true, currentTab === "login" ? "Signing in…" : "Creating account…");
+
+  try {
+    if (currentTab === "login") {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      // onAuthStateChange will redirect
+    } else {
+      const { data, error } = await sb.auth.signUp({ email, password });
+      if (error) throw error;
+
+      if (data.session) {
+        // Auto-confirmed (email verification disabled in Supabase)
+        // onAuthStateChange will redirect
+      } else {
+        // Email confirmation required
+        showNotice(
+          "Account created! Check your inbox and click the confirmation link, then sign in.",
+          "success"
+        );
+        switchTab("login");
+      }
+    }
+  } catch (err) {
+    showNotice(friendlyError(err.message), "error");
+  } finally {
+    setLoading(btn, false, currentTab === "login" ? "Sign in" : "Create account");
+  }
+}
+
+// ── Google OAuth ──────────────────────────────────────────────
+async function signInWithGoogle() {
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: window.location.origin + "/" + CHAT_PAGE,
+    },
+  });
+  if (error) showNotice(friendlyError(error.message), "error");
+}
+
+// ── Password reset ────────────────────────────────────────────
+function showReset() {
+  document.getElementById("main-view").style.display  = "none";
+  document.getElementById("reset-view").style.display = "flex";
+  document.getElementById("reset-view").style.flexDirection = "column";
+  clearNotice("reset-notice");
+  document.getElementById("reset-email").value = document.getElementById("email").value;
+}
+
+function showMain() {
+  document.getElementById("main-view").style.display  = "flex";
+  document.getElementById("reset-view").style.display = "none";
+}
+
+async function handleReset() {
+  const email = document.getElementById("reset-email").value.trim();
+  const btn   = document.getElementById("reset-btn");
+
+  clearNotice("reset-notice");
+
+  if (!email || !isValidEmail(email)) {
+    showNotice("Please enter a valid email address.", "error", "reset-notice");
+    return;
+  }
+
+  setLoading(btn, true, "Sending…");
+
+  try {
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + "/" + CHAT_PAGE,
+    });
+    if (error) throw error;
+    showNotice("Reset link sent! Check your inbox.", "success", "reset-notice");
+  } catch (err) {
+    showNotice(friendlyError(err.message), "error", "reset-notice");
+  } finally {
+    setLoading(btn, false, "Send reset link");
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+function setLoading(btn, loading, label) {
+  btn.disabled = loading;
+  btn.innerHTML = loading
+    ? `<span class="spinner"></span>${label}`
+    : label;
+}
+
+function showNotice(msg, type, id = "notice") {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = `notice ${type}`;
+  el.style.display = "block";
+}
+
+function clearNotice(id = "notice") {
+  const el = document.getElementById(id);
+  el.style.display = "none";
+  el.textContent = "";
+  document.getElementById("email")?.classList.remove("invalid");
+  document.getElementById("password")?.classList.remove("invalid");
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function friendlyError(msg = "") {
+  if (msg.includes("Invalid login credentials"))
+    return "Incorrect email or password. Please try again.";
+  if (msg.includes("Email not confirmed"))
+    return "Please confirm your email first — check your inbox.";
+  if (msg.includes("User already registered"))
+    return "An account with this email already exists. Try signing in.";
+  if (msg.includes("Password should be"))
+    return "Password must be at least 6 characters.";
+  if (msg.includes("rate limit"))
+    return "Too many attempts. Please wait a moment and try again.";
+  return msg || "Something went wrong. Please try again.";
+}
+
+// Submit on Enter key in password field
+document.getElementById("password").addEventListener("keydown", e => {
+  if (e.key === "Enter") handleSubmit();
+});
+</script>
+</body>
+</html>
